@@ -31,7 +31,8 @@ var URI = require('urijs');
 request = request.defaults({
 	headers: {
 		'Accept': 'application/rdf+xml',  // reliably available RDF representation
-		'OSLC-Core-Version': '2.0'
+		'OSLC-Core-Version': '2.0',
+		'Content-Type': 'application/x-www-form-urlencoded'
 	},
 	strictSSL: false,  		  // no need for certificates
 	jar: cookies,                // use the cookie jar to save cookies
@@ -66,7 +67,28 @@ request.authGet = function (options, callback) {
 	request.get(options, function(error, response, body) {
 		if (response &&  response.headers['x-com-ibm-team-repository-web-auth-msg'] === 'authrequired') {
 			// JEE Form base authentication
-			request.post(serverURI+'/j_security_check?j_username='+_self.userId+'&j_password='+_self.password, callback)
+			request.post(serverURI + '/j_security_check?j_username='+_self.userId+'&j_password='+_self.password, callback)
+		} else if (response && response.headers['www-authenticate']) {
+			// OpenIDConnect authentication (using Jazz Authentication Server)
+			request.get(options, callback).auth(_self.userId, _self.password, false)
+		} else {
+			callback(error, response, body)
+		}
+	})
+}
+
+/* 
+ * Extend GET to respond to jazz.net app authentication requests
+ * using JEE FORM based authentication
+ */
+request.authGetJSON = function (options, callback) {
+	var _self = this;
+	let uri = new URI((typeof options === "string")? options: options.uri);
+	let serverURI = uri.origin() + uri.path();
+	request.get(options, function(error, response, body) {
+		if (response &&  response.headers['x-com-ibm-team-repository-web-auth-msg'] === 'authrequired') {
+			// JEE Form base authentication
+			request.post(serverURI + '/j_security_check?j_username='+_self.userId+'&j_password='+_self.password, callback)
 		} else if (response && response.headers['www-authenticate']) {
 			// OpenIDConnect authentication (using Jazz Authentication Server)
 			request.get(options, callback).auth(_self.userId, _self.password, false)

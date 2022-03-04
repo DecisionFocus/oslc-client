@@ -23,7 +23,6 @@ var ServiceProviderCatalog = require('./ServiceProviderCatalog')
 var ServiceProvider = require('./ServiceProvider')
 var OSLCResource = require('./OSLCResource')
 var Compact = require('./Compact')
-var URI = require('urijs');
 
 var rdflib = require('rdflib')
 require('./namespaces')
@@ -96,7 +95,7 @@ connect(serviceProviders, callback) {
 	// Get the Jazz rootservices document for OSLC v2
 	// This does not require authentication
 	_self.read(_self.serverURI+'/rootservices', function gotRootServices(err, resource) {
-		if (err) return console.error("Could not read rootservices for "+_self.serverURI)
+		if (err) return console.error(err)
 		_self.rootservices = new RootServices(resource.id.uri, resource.kb)
 		// read the ServiceProviderCatalog, this does require authentication
 		var catalogURI = _self.rootservices.serviceProviderCatalog(serviceProviders)
@@ -186,7 +185,7 @@ read(res, callback) {
 	request.authGet(res, function gotResult(err, response, body) {
 		if (err || response.statusCode != 200) {
 			let code = err? 500: response.statusCode;
-			callback(code, null);
+			callback(err, null);
 			return;
 		}
 		if (response.headers['x-com-ibm-team-repository-web-auth-msg'] === 'authfailed') {
@@ -204,6 +203,49 @@ read(res, callback) {
 		results.etag = response.headers['etag']
 		callback(null, results)
 	})
+}
+
+readJSON(res, callback) {
+	let uri = (typeof res === "string")? res: res.uri;
+	// GET the OSLC resource and convert it to a JavaScript object
+	request.authGetJSON(res, function gotResult(err, response, body) {
+		if (err || response.statusCode != 200) {
+			let code = err? 500: response.statusCode;
+			callback(err, null);
+			return;
+		}
+		if (response.headers['x-com-ibm-team-repository-web-auth-msg'] === 'authfailed') {
+			callback(401, null);
+			return;
+		}
+		callback(null, body)
+	})
+}
+
+readServiceProvidersJSON(serviceProviders, callback) {
+	var _self = this
+
+	// Get the Jazz rootservices document for OSLC v2
+	// This does not require authentication
+	_self.read(_self.serverURI+'/rootservices', function gotRootServices(err, resource) {
+		if (err) return console.error("Could not read rootservices for "+_self.serverURI)
+		_self.rootservices = new RootServices(resource.id.uri, resource.kb)
+		// read the ServiceProviderCatalog, this does require authentication
+		var catalogURI = _self.rootservices.serviceProviderCatalog(serviceProviders)
+		let options = {
+				uri: catalogURI,
+				headers: {
+						'Accept': 'application/json',
+						'OSLC-Core-Version': '2.0'
+				}
+		};
+		_self.readJSON(options, gotServiceProviderCatalog)
+	})
+	
+	// Got the service provider catalog, it will be needed for any other request.
+	function gotServiceProviderCatalog(err, resource) {
+		callback(err, resource);
+	}
 }
 
 /**
@@ -300,6 +342,22 @@ update(resource, callback) {
 			callback(err)
 		});
     });
+}
+
+patch(rdfResource, str, callback) {
+	var headers = {
+		'Content-Type': 'application/json',
+		'OSLC-Core-Version': '2.0'
+	}
+	var options = {
+		uri: rdfResource.uri,
+		headers: headers,
+		body: str,
+		json: true
+	}
+	request.patch(options, function gotUpdateResults(err, response, body) {
+		callback(err)
+	});
 }
 
 /**
