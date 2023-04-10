@@ -21,40 +21,10 @@
  * for handling cookies.
  */
 
-var request = require('request');
-var cookies = request.jar();
 var URI = require('urijs');
 
-/* 
- * Set the typical OSLC defaults
- */
-request = request.defaults({
-	headers: {
-		'Accept': 'application/rdf+xml',  // reliably available RDF representation
-		'OSLC-Core-Version': '2.0',
-		'Content-Type': 'application/x-www-form-urlencoded'
-	},
-	strictSSL: false,  		  // no need for certificates
-	jar: cookies,                // use the cookie jar to save cookies
-	followAllRedirects: true  // for FORM based authentication
-})
-request.cookies = cookies;
-request.mode='no-cors';
-
-/* 
- * Lookup a cookie in the cookie jar
- */
-request.getCookie = function(key) {
-	var cookies = this.cookies._jar.toJSON().cookies
-	var value = null;
-	for (var cookie in cookies) {
-		if (cookies[cookie].key === key) {
-			value = cookies[cookie].value
-			break
-		}
-	}
-	return value
-}
+var request = require("superagent");
+const agent = request.agent();
 
 /* 
  * Extend GET to respond to jazz.net app authentication requests
@@ -64,17 +34,26 @@ request.authGet = function (options, callback) {
 	var _self = this;
 	let uri = new URI((typeof options === "string")? options: options.uri);
 	let serverURI = uri.origin() + uri.path();
-	request.get(options, function(error, response, body) {
-		if (response &&  response.headers['x-com-ibm-team-repository-web-auth-msg'] === 'authrequired') {
+	agent
+    .get(options)
+    .set("Accept", 'application/rdf+xml')
+	.set("OSLC-Core-Version", '2.0')
+	.set("Content-Type", 'application/x-www-form-urlencoded')
+    .end(function(error, response) {
+        if (response &&  (response.headers['x-com-ibm-team-repository-web-auth-msg'] === 'authrequired' || response.redirects.length)) {
 			// JEE Form base authentication
-			request.post(serverURI + '/j_security_check?j_username='+_self.userId+'&j_password='+_self.password, callback)
+			agent
+			.post(serverURI + '/j_security_check?j_username='+_self.userId+'&j_password='+_self.password)
+			.end(function(err, res) {
+				callback(err, res, res.body.toString())
+			});
 		} else if (response && response.headers['www-authenticate']) {
 			// OpenIDConnect authentication (using Jazz Authentication Server)
-			request.get(options, callback).auth(_self.userId, _self.password, false)
+			agent.get(options, callback).auth(_self.userId, _self.password, false)
 		} else {
-			callback(error, response, body)
+			callback(error, response, response.body.toString())
 		}
-	})
+    });
 }
 
 /* 
@@ -85,17 +64,25 @@ request.authGetJSON = function (options, callback) {
 	var _self = this;
 	let uri = new URI((typeof options === "string")? options: options.uri);
 	let serverURI = uri.origin() + uri.path();
-	request.get(options, function(error, response, body) {
-		if (response &&  response.headers['x-com-ibm-team-repository-web-auth-msg'] === 'authrequired') {
+	agent
+    .get(options.uri)
+    .set("Accept", 'application/json')
+	.set("OSLC-Core-Version", '2.0')
+    .end(function(error, response) {
+        if (response &&  (response.headers['x-com-ibm-team-repository-web-auth-msg'] === 'authrequired' || response.redirects.length)) {
 			// JEE Form base authentication
-			request.post(serverURI + '/j_security_check?j_username='+_self.userId+'&j_password='+_self.password, callback)
+			agent
+			.post(serverURI + '/j_security_check?j_username='+_self.userId+'&j_password='+_self.password)
+			.end(function(err, res) {
+				callback(err, res, res.body)
+			});
 		} else if (response && response.headers['www-authenticate']) {
 			// OpenIDConnect authentication (using Jazz Authentication Server)
-			request.get(options, callback).auth(_self.userId, _self.password, false)
+			agent.get(options, callback).auth(_self.userId, _self.password, false)
 		} else {
-			callback(error, response, body)
+			callback(error, response, response.body)
 		}
-	})
+    });
 }
 
 module.exports = request
