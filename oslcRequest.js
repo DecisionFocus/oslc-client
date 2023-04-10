@@ -22,7 +22,6 @@
  */
 
 var URI = require('urijs');
-
 var request = require("superagent");
 const agent = request.agent();
 
